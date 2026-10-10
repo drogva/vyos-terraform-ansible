@@ -87,7 +87,7 @@ resource "aws_ec2_transit_gateway_route_table_propagation" "vpc_to_vpn_prop" {
 resource "local_file" "vyos_vars" {
   filename = "${path.module}/ansible/vars/vpn_vars.yml"
   content  = <<EOT
-local_public_ip: "112.168.168.8"
+local_public_ip: ""
 local_private_ip: "192.168.0.254"
 local_as: 65001
 aws_as: 64512
