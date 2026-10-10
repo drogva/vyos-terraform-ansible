@@ -1,0 +1,47 @@
+{%- set tunnels = [
+    {'id': '1', 'peer': 'AWS-T1', 'vti': 'vti0', 'remote': tunnel1_remote_ip, 'vti_ip': tunnel1_vyos_inside_ip, 'psk': tunnel1_psk, 'neighbor': tunnel1_aws_neighbor_ip}] -%}
+# 1. IKE / ESP 암호화 그룹 설정
+vpn ipsec ike-group AWS-IKE lifetime '28800'
+vpn ipsec ike-group AWS-IKE proposal 1 dh-group '2'
+vpn ipsec ike-group AWS-IKE proposal 1 encryption 'aes128'
+vpn ipsec ike-group AWS-IKE proposal 1 hash 'sha1'
+vpn ipsec ike-group AWS-IKE dead-peer-detection action 'restart'
+vpn ipsec ike-group AWS-IKE dead-peer-detection interval '15'
+vpn ipsec ike-group AWS-IKE dead-peer-detection timeout '30'
+
+vpn ipsec esp-group AWS-ESP lifetime '3600'
+vpn ipsec esp-group AWS-ESP mode 'tunnel'
+vpn ipsec esp-group AWS-ESP pfs 'enable'
+vpn ipsec esp-group AWS-ESP proposal 1 encryption 'aes128'
+vpn ipsec esp-group AWS-ESP proposal 1 hash 'sha1'
+
+# 2. 터널별 인터페이스 및 피어 설정
+{% for t in tunnels %}
+interfaces vti {{ t.vti }} address '{{ t.vti_ip }}/30'
+interfaces vti {{ t.vti }} description 'AWS-Tunnel-{{ t.id }}'
+interfaces vti {{ t.vti }} mtu '1436'
+
+vpn ipsec authentication psk {{ t.peer }} id '{{ local_public_ip }}'
+vpn ipsec authentication psk {{ t.peer }} secret '{{ t.psk }}'
+vpn ipsec site-to-site peer {{ t.peer }} authentication mode 'pre-shared-secret'
+vpn ipsec site-to-site peer {{ t.peer }} authentication local-id '{{ local_public_ip }}'
+vpn ipsec site-to-site peer {{ t.peer }} remote-address '{{ t.remote }}'
+vpn ipsec site-to-site peer {{ t.peer }} local-address '{{ local_private_ip }}'
+vpn ipsec site-to-site peer {{ t.peer }} ike-group 'AWS-IKE'
+vpn ipsec site-to-site peer {{ t.peer }} vti bind '{{ t.vti }}'
+vpn ipsec site-to-site peer {{ t.peer }} vti esp-group 'AWS-ESP'
+{% endfor %}
+
+# 3. BGP 라우팅 설정
+protocols bgp system-as {{ local_as }}
+{% for t in tunnels %}
+protocols bgp neighbor {{ t.neighbor }} remote-as {{ aws_as }}
+protocols bgp neighbor {{ t.neighbor }} address-family ipv4-unicast soft-reconfiguration 'inbound'
+protocols bgp neighbor {{ t.neighbor }} timers holdtime '30'
+protocols bgp neighbor {{ t.neighbor }} timers keepalive '10'
+{% endfor %}
+
+# 4. 네트워크 광고 (오픈스택 대역) - 승호님이 원하신 그 핵심 라인!
+protocols bgp address-family ipv4-unicast network {{ openstack_network_cidr }}
+protocols bgp address-family ipv4-unicast network {{ openstack_network_cidr2 }}
+protocols bgp address-family ipv4-unicast network {{ openstack_network_cidr3 }}

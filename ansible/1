@@ -1,0 +1,60 @@
+승호님, cat으로 보여주신 vyos_config.j2 파일 내용을 보니 여전히 configure, commit, save 명령어가 포함되어 있네요.
+
+이전 에러 메시지(Configuration path: [configure] is not valid)는 앤서블의 vyos_config 모듈이 이미 설정 모드에 진입했는데, 템플릿 안에서 또 configure를 실행하려고 해서 발생한 것입니다.
+
+오픈스택 TripleO 배포를 50번 이상 반복하며 쉘 스크립트나 설정 파일의 "멱등성(Idempotency)"과 "실행 컨텍스트"가 얼마나 중요한지 잘 아실 겁니다. 앤서블 모듈을 쓸 때는 그 모듈의 규칙에 맞춰줘야 합니다.
+
+🛠️ vyos_config.j2 최종 수정 가이드
+아래 내용으로 파일을 완전히 덮어쓰세요. 제어 명령어(configure, commit 등)를 모두 제거하고 순수 설정 명령어만 남기는 것이 핵심입니다.
+
+코드 스니펫
+{%- set tunnels = [
+    {'id': '1', 'peer': 'AWS-T1', 'vti': 'vti0', 'remote': tunnel1_remote_ip, 'vti_ip': tunnel1_vyos_inside_ip, 'psk': tunnel1_psk, 'neighbor': tunnel1_aws_neighbor_ip},
+    {'id': '2', 'peer': 'AWS-T2', 'vti': 'vti1', 'remote': tunnel2_remote_ip, 'vti_ip': tunnel2_vyos_inside_ip, 'psk': tunnel2_psk, 'neighbor': tunnel2_aws_neighbor_ip}
+] -%}
+
+# 1. IKE / ESP 암호화 그룹 설정
+set vpn ipsec ike-group AWS-IKE lifetime '28800'
+set vpn ipsec ike-group AWS-IKE proposal 1 dh-group '2'
+set vpn ipsec ike-group AWS-IKE proposal 1 encryption 'aes128'
+set vpn ipsec ike-group AWS-IKE proposal 1 hash 'sha1'
+set vpn ipsec ike-group AWS-IKE dead-peer-detection action 'restart'
+set vpn ipsec ike-group AWS-IKE dead-peer-detection interval '15'
+set vpn ipsec ike-group AWS-IKE dead-peer-detection timeout '30'
+
+set vpn ipsec esp-group AWS-ESP compression 'disable'
+set vpn ipsec esp-group AWS-ESP lifetime '3600'
+set vpn ipsec esp-group AWS-ESP mode 'tunnel'
+set vpn ipsec esp-group AWS-ESP pfs 'enable'
+set vpn ipsec esp-group AWS-ESP proposal 1 encryption 'aes128'
+set vpn ipsec esp-group AWS-ESP proposal 1 hash 'sha1'
+set vpn ipsec ipsec-interfaces interface 'eth0'
+
+# 2. 터널별 인터페이스 및 피어 설정
+{% for t in tunnels %}
+set interfaces vti {{ t.vti }} address '{{ t.vti_ip }}/30'
+set interfaces vti {{ t.vti }} description 'AWS-Tunnel-{{ t.id }}'
+set interfaces vti {{ t.vti }} mtu '1436'
+
+set vpn ipsec authentication psk {{ t.peer }} id '{{ local_public_ip }}'
+set vpn ipsec authentication psk {{ t.peer }} secret '{{ t.psk }}'
+set vpn ipsec site-to-site peer {{ t.peer }} authentication mode 'pre-shared-secret'
+set vpn ipsec site-to-site peer {{ t.peer }} authentication local-id '{{ local_public_ip }}'
+set vpn ipsec site-to-site peer {{ t.peer }} remote-address '{{ t.remote }}'
+set vpn ipsec site-to-site peer {{ t.peer }} local-address '{{ local_private_ip }}'
+set vpn ipsec site-to-site peer {{ t.peer }} ike-group 'AWS-IKE'
+set vpn ipsec site-to-site peer {{ t.peer }} vti bind '{{ t.vti }}'
+set vpn ipsec site-to-site peer {{ t.peer }} vti esp-group 'AWS-ESP'
+{% endfor %}
+
+# 3. BGP 라우팅 설정
+set protocols bgp system-as {{ local_as }}
+{% for t in tunnels %}
+set protocols bgp neighbor {{ t.neighbor }} remote-as {{ aws_as }}
+set protocols bgp neighbor {{ t.neighbor }} address-family ipv4-unicast soft-reconfiguration 'inbound'
+set protocols bgp neighbor {{ t.neighbor }} timers holdtime '30'
+set protocols bgp neighbor {{ t.neighbor }} timers keepalive '10'
+{% endfor %}
+
+# 네트워크 광고 (오픈스택 대역)
+set protocols bgp address-family ipv4-unicast network {{ openstack_network_cidr }}

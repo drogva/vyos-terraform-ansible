@@ -1,0 +1,13 @@
+{%- set tunnels = [
+    {'neighbor': tunnel1_aws_neighbor_ip},
+    {'neighbor': tunnel2_aws_neighbor_ip}
+] -%}
+
+set protocols bgp system-as {{ local_as }}
+{% for t in tunnels %}
+set protocols bgp neighbor {{ t.neighbor }} remote-as {{ aws_as }}
+set protocols bgp neighbor {{ t.neighbor }} address-family ipv4-unicast soft-reconfiguration 'inbound'
+set protocols bgp neighbor {{ t.neighbor }} timers holdtime '30'
+set protocols bgp neighbor {{ t.neighbor }} timers keepalive '10'
+{% endfor %}
+set protocols bgp address-family ipv4-unicast network {{ openstack_network_cidr }}

@@ -1,0 +1,21 @@
+- name: VyOS 하이브리드 VPN 자동 설정
+  hosts: all
+  gather_facts: no
+  # 앤서블이 변수 파일을 찾을 수 있도록 경로를 추가합니다.
+  vars_files:
+    - vars/vpn_vars.yml
+
+  tasks:
+    - name: 터널 1 설정 적용
+      vyos.vyos.vyos_config:
+        lines: "{{ lookup('template', '/root/terraform-vyos/ansible/vyos_config_1.j2').split('\n') }}"
+        save: yes
+
+    - name: 터널 간 간섭 방지를 위한 대기 (10초)
+      pause:
+        seconds: 200
+
+    - name: 터널 2 설정 적용
+      vyos.vyos.vyos_config:
+        lines: "{{ lookup('template', '/root/terraform-vyos/ansible/vyos_config_2.j2').split('\n') }}"
+        save: yes

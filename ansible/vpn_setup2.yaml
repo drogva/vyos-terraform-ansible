@@ -1,0 +1,22 @@
+- name: VyOS 하이브리드 VPN 자동 설정
+  hosts: all
+  gather_facts: no
+  # 앤서블이 변수 파일을 찾을 수 있도록 경로를 추가합니다.
+  vars_files:
+    - vars/vpn_vars.yml
+
+  tasks:
+    - name: 1. 인터페이스 생성
+      vyos.vyos.vyos_config:
+        lines: "{{ lookup('template', 'ansible/vyos_config_1.j2').split('\n') }}"
+        save: yes
+
+    - name: 2. VPN 설정
+      vyos.vyos.vyos_config:
+        lines: "{{ lookup('template', 'ansible/vyos_config_2.j2').split('\n') }}"
+        save: yes
+
+    - name: 3. BGP 라우팅
+      vyos.vyos.vyos_config:
+        lines: "{{ lookup('template', 'ansible/vyos_config_3.j2').split('\n') }}"
+        save: yes
