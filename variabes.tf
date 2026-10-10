@@ -13,5 +13,5 @@ variable "private_subnet_ids" {
 variable "vyos_public_ip" {
   description = "외부 IP"
   type        = string
-  default     = "112.168.168.8"
+  default     = ""
 }
